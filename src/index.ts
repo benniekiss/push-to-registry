@@ -6,8 +6,8 @@ import * as os from "os";
 import * as path from "path";
 import {
     isStorageDriverOverlay, findFuseOverlayfsPath,
-    splitByNewline,
-    isFullImageName, getFullImageName,
+    splitByNewline, getFullImageName, isFullImageName,
+    getImageName, isRegistryLocalhost,
     getFullDockerImageName,
 } from "./util";
 import { Inputs, Outputs } from "./generated/inputs-outputs";
@@ -86,12 +86,17 @@ async function run(): Promise<void> {
         if (!registry) {
             throw new Error(`Input "${Inputs.REGISTRY}" must be provided when using non full name tags`);
         }
+        // special handling if image starts with localhost/
+        // this will target `localhost/image:tag` as the source, but push `registry/image:tag`
+        const isImageLocalhost = isRegistryLocalhost(normalizedImage);
+        const destinationImageName = isImageLocalhost ? getImageName(normalizedImage) : normalizedImage;
 
         const registryWithoutTrailingSlash = registry.replace(/\/$/, "");
-        const registryPath = `${registryWithoutTrailingSlash}/${normalizedImage}`;
-        core.info(`Combining image name "${normalizedImage}" and registry "${registry}" `
+        const registryPath = `${registryWithoutTrailingSlash}/${destinationImageName}`;
+
+        core.info(`Combining image name "${destinationImageName}" and registry "${registry}" `
             + `to form registry path "${registryPath}"`);
-        if (normalizedImage.indexOf("/") > -1 && registry.indexOf("/") > -1) {
+        if (destinationImageName.indexOf("/") > -1 && registry.indexOf("/") > -1) {
             core.warning(`"${registryPath}" does not seem to be a valid registry path. `
             + `The registry path should not contain more than 2 slashes. `
             + `Refer to the Inputs section of the readme for naming image and registry.`);
@@ -296,9 +301,10 @@ async function pullImageFromDocker(): Promise<ImageStorageCheckResult> {
     const missingTags: string[] = [];
     try {
         for (const imageWithTag of sourceImages) {
+            const dockerImageName = getFullDockerImageName(imageWithTag);
             const commandResult: ExecResult = await execute(
                 await getPodmanPath(),
-                [ ...dockerPodmanOpts, "pull", `docker-daemon:${imageWithTag}` ],
+                [ ...dockerPodmanOpts, "pull", `docker-daemon:${dockerImageName}` ],
                 { ignoreReturnCode: true, failOnStdErr: false, group: true }
             );
             if (commandResult.exitCode === 0) {
