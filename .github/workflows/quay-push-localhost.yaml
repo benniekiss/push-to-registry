@@ -1,0 +1,145 @@
+# This workflow will perform a test whenever there
+# is some change in code done to ensure that the changes
+# are not buggy and we are getting the desired output.
+name: Push to Quay.io - localhost
+on:
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ptr-test
+  IMAGE_TAGS: ${{ github.sha }} v1
+  IMAGE_REGISTRY: quay.io
+  IMAGE_NAMESPACE: benniekiss
+
+jobs:
+  push-quay:
+    name: Build and push image
+    runs-on: ubuntu-22.04
+
+    steps:
+      # Checkout push-to-registry action github repository
+      - name: Checkout Push to Registry action
+        uses: actions/checkout@v4
+
+      # Build image using Buildah action
+      - name: Build Image
+        id: build_image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          tags: ${{ env.IMAGE_TAGS }}
+          base-image: busybox:latest
+          entrypoint: |
+            bash
+            -c
+            echo 'hello world'
+          oci: true
+
+      # Push the image to Quay.io (Image Registry)
+      - name: Push To Quay
+        #uses: ./
+        uses: redhat-actions/push-to-registry@v2
+        id: push
+        with:
+          image: ${{ steps.build_image.outputs.image }}
+          tags: ${{ steps.build_image.outputs.tags }}
+          registry: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+          extra-args: |
+            --disable-content-trust
+
+      - name: Check Pushed Image
+        env:
+          REGISTRY_IMAGE: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ env.IMAGE_NAME }}:v1
+          LOCALHOST_IMAGE: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          podman pull ${{ env.REGISTRY_IMAGE }}
+          registry_entry=$(podman image inspect ${{ env.REGISTRY_IMAGE }} | jq '.[].Config.Entrypoint[-1]')
+          local_entry=$(podman image inspect ${{ env.LOCALHOST_IMAGE }} | jq '.[].Config.Entrypoint[-1]')
+
+          echo ${registry_entry}
+          echo ${local_entry}
+
+          if [[ ${registry_entry} == ${local_entry} ]]; then
+            echo "SUCCESS"
+          else
+            exit 1
+          fi
+
+      # Build updated image using Buildah action
+      - name: Build Image - localhost
+        id: build_image_localhost
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          tags: v1
+          base-image: busybox:latest
+          entrypoint: |
+            bash
+            -c
+            echo 'HELLO WORLD'
+          oci: true
+
+      # Push the image to Quay.io (Image Registry)
+      # does not use localhost, so the image should not be updated
+      - name: Push To Quay - non-localhost
+        uses: redhat-actions/push-to-registry@v2
+        id: push_non_localhost
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          tags: v1
+          registry: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+          extra-args: |
+            --disable-content-trust
+
+      - name: Check Pushed Image Non-Localhost
+        env:
+          REGISTRY_IMAGE: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ env.IMAGE_NAME }}:v1
+          LOCALHOST_IMAGE: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          podman pull ${{ env.REGISTRY_IMAGE }}
+          registry_entry=$(podman image inspect ${{ env.REGISTRY_IMAGE }} | jq '.[].Config.Entrypoint[-1]')
+          local_entry=$(podman image inspect ${{ env.LOCALHOST_IMAGE }} | jq '.[].Config.Entrypoint[-1]')
+
+          echo ${registry_entry}
+          echo ${local_entry}
+
+          if [[ ${registry_entry} == ${local_entry} ]]; then
+            echo "SUCCESS"
+          else
+            exit 1
+          fi
+
+      # Push the updated image to Quay.io (Image Registry)
+      - name: Push To Quay - localhost
+        uses: redhat-actions/push-to-registry@v2
+        id: push_localhost
+        with:
+          image: localhost/${{ env.IMAGE_NAME }}
+          tags: v1
+          registry: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+          extra-args: |
+            --disable-content-trust
+
+      - name: Check Pushed Image - Localhost
+        env:
+          REGISTRY_IMAGE: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ env.IMAGE_NAME }}:v1
+          LOCALHOST_IMAGE: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          podman pull ${{ env.REGISTRY_IMAGE }}
+          registry_entry=$(podman image inspect ${{ env.REGISTRY_IMAGE }} | jq '.[].Config.Entrypoint[-1]')
+          local_entry=$(podman image inspect ${{ env.LOCALHOST_IMAGE }} | jq '.[].Config.Entrypoint[-1]')
+
+          echo ${registry_entry}
+          echo ${local_entry}
+
+          if [[ ${registry_entry} != ${local_entry} ]]; then
+            echo "SUCCESS"
+          else
+            exit 1
+          fi
