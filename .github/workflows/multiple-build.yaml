@@ -10,10 +10,10 @@ on:
 env:
   IMAGE_REGISTRY: quay.io
   IMAGE_NAMESPACE: benniekiss
-  IMAGE_NAME: ptr-test
+  IMAGE_NAME: test/image/ptr
   IMAGE_TAG: v1
-  SHORT_IMAGE_NAME_TAG: ptr-test:v1
-  FULLY_QUALIFIED_IMAGE_NAME_TAG: quay.io/benniekiss/ptr-test:v1
+  SHORT_IMAGE_NAME_TAG: test/image/ptr:v1
+  FULLY_QUALIFIED_IMAGE_NAME_TAG: quay.io/benniekiss/test/image/ptr:v1
 
 jobs:
   build:
