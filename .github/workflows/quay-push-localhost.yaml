@@ -1,0 +1,58 @@
+name: Push to Quay.io - localhost
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+env:
+  IMAGE_REGISTRY: quay.io
+  IMAGE_NAMESPACE: redhat-github-actions
+  IMAGE_NAME: ptr-test
+  IMAGE_TAG: v1
+  EXPECTED_REGISTRY_PATH: quay.io/redhat-github-actions/ptr-test:v1
+
+jobs:
+  push-quay:
+    name: Build and push image
+    runs-on: ubuntu-22.04
+
+    steps:
+      # Checkout push-to-registry action github repository
+      - name: Checkout Push to Registry action
+        uses: actions/checkout@v4
+
+      # Build image using Buildah action
+      - name: Build Image
+        id: build
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          tags: ${{ env.IMAGE_TAG }}
+          base-image: busybox:latest
+          entrypoint: |
+            bash
+            -c
+            echo 'hello world'
+          oci: true
+
+      # Push the localhost/ image to Quay.io (Image Registry)
+      - name: Push Localhost Image To Quay
+        uses: ./
+        id: push
+        with:
+          image: localhost/${{ env.IMAGE_NAME }}
+          tags: ${{ env.IMAGE_TAG }}
+          registry: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+          extra-args: |
+            --disable-content-trust
+
+      - name: Check Pushed Image
+        run: |
+          if [[ ${{ env.EXPECTED_REGISTRY_PATH }} == ${{ steps.push.outputs.registry_path }} ]]; then
+            echo ${{ toJSON(steps.push.outputs) }}
+          else
+            exit 1
+          fi
